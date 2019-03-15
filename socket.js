@@ -1,15 +1,15 @@
 const serializeError = require('serialize-error');
-let socket_io_client = require('socket.io-client');
+let io = require('socket.io-client');
 
 function Socket (sock, functions = {}, with_proxy=true) {
     functions = functions || {};
     let Handler;
     initializeHandler();
-    sock = typeof sock === "string"? socket_io_client.connect(sock) : sock;
+    sock = typeof sock === "string"? io.connect(sock) : sock;
 
     if(sock instanceof Promise) {
         sock.then((url) => {
-            sock = socket_io_client.connect(url);
+            sock = io.connect(url);
             initializeSocket();
         });
     } else initializeSocket();
