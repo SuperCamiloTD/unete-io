@@ -3,6 +3,16 @@ let io = require('socket.io-client');
 
 function Socket (sock, functions = {}, with_proxy=true) {
     functions = functions || {};
+    if(functions instanceof Promise) {
+        functions.then((x) => {
+            calls = functions = x;
+
+            x.$public = () => destructureMap(functions);
+        });
+        
+        functions = {};
+    }
+    
     let Handler;
     initializeHandler();
     sock = typeof sock === "string"? io.connect(sock) : sock;
@@ -83,7 +93,7 @@ function Socket (sock, functions = {}, with_proxy=true) {
 
     function addToHandler (obj, base=handler, route=[]) {
         for(let i in obj) {
-            if(typeof obj[i] === "object") {
+            if(typeof obj[i] === "object" && !Array.isArray(obj[i])) {
                 if(!base[i]) base[i] = {};
 
                 addToHandler(obj[i], base[i], [...route, i]);
@@ -99,7 +109,7 @@ function Socket (sock, functions = {}, with_proxy=true) {
         for(let i in obj) {
             let x = obj[i];
             
-            if(typeof x === "object") base[i] = destructureMap(x);
+            if(typeof x === "object" && !Array.isArray(x)) base[i] = destructureMap(x);
             else base[i] = getParamNames(x);
         }
 
@@ -119,6 +129,8 @@ function Socket (sock, functions = {}, with_proxy=true) {
                 sock.emit('res', { iid, res: result });
             } catch (exc) {
                 if(exc instanceof Error) exc = serializeError(exc);
+                if(functions.$error) exc = functions.$error(exc);
+                
                 console.log(exc)
                 sock.emit('exc', { iid, exc });
             }
@@ -168,7 +180,7 @@ function Socket (sock, functions = {}, with_proxy=true) {
                         for(let i=0, l=value.length - 1;i<l;i++)
                             pointer = pointer[prop];
 
-                        pointer[value[value.length - 1]];
+                        pointer[value[value.length - 1]] = value;
                     }
                 });
             
