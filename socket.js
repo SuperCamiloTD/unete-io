@@ -46,7 +46,6 @@ function Socket (sock, functions = {}, with_proxy=true) {
     }
 
     async function call (routes, ...args) {
-
         if(sock instanceof Promise) await sock;
 
         await Connect();
@@ -103,14 +102,17 @@ function Socket (sock, functions = {}, with_proxy=true) {
         }
     }
 
-    function destructureMap (obj) {
+    function destructureMap (obj, path=[]) {
         const base = {};
 
         for(let i in obj) {
             let x = obj[i];
             
-            if(typeof x === "object" && !Array.isArray(x)) base[i] = destructureMap(x);
-            else base[i] = getParamNames(x);
+            if(typeof x === "object" && !Array.isArray(x)) base[i] = destructureMap(x, [...path, i]);
+            else base[i] = {
+                arguments: getParamNames(x),
+                help: functions.$help && functions.$help(path, x)
+            }
         }
 
         return base;
@@ -120,19 +122,28 @@ function Socket (sock, functions = {}, with_proxy=true) {
         sock.on('call', async ({ path, iid, args, cb }) => {
             try {
                 await Connect();
+                
+                
                 let fn = getFunction(path);
                 
                 for(let i in cb) args[i] = (..._args) => call([cb[i]], ..._args);
                 if(typeof fn !== "function") throw 'UNKOWN_METHOD';
+                
+                functions.$before_call && functions.$before_call({ path, iid, args });
+
                 let result = await fn.apply(handler, args);
     
                 sock.emit('res', { iid, res: result });
+                
+                functions.$after_call && functions.$after_call({ path, args, iid, res: result });
             } catch (exc) {
                 if(exc instanceof Error) exc = serializeError(exc);
                 if(functions.$error) exc = functions.$error(exc);
                 
                 console.log(exc)
                 sock.emit('exc', { iid, exc });
+
+                functions.$after_error && functions.$after_error({ path, args, iid, res: result });
             }
         });
 
