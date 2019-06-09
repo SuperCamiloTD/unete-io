@@ -8,6 +8,7 @@ function Socket (sock, functions = {}, with_proxy=true) {
             calls = functions = x;
 
             x.$public = () => destructureMap(functions);
+            setupPrivateFunctions();
         });
         
         functions = {};
@@ -35,6 +36,10 @@ function Socket (sock, functions = {}, with_proxy=true) {
     let id = () => `${connection_id}-${++_iid}`;
 
     let handler = Handler(call);
+    let private_functions = {};
+    
+    setupPrivateFunctions();
+
 
     functions.$public = () => destructureMap(functions);
 
@@ -43,6 +48,20 @@ function Socket (sock, functions = {}, with_proxy=true) {
         for(let i=0, l=path.length;i<l;i++) pointer = pointer[path[i]];
         
         return pointer;
+    }
+
+    function setupPrivateFunctions () {
+        
+        set('$before_call');
+        set('$after_call');
+        set('$after_error');
+
+        function set (k) {
+            if(!functions[k]) return;
+
+            private_functions[k] = functions[k];
+            delete functions[k];
+        }
     }
 
     async function call (routes, ...args) {
@@ -92,7 +111,7 @@ function Socket (sock, functions = {}, with_proxy=true) {
 
     function addToHandler (obj, base=handler, route=[]) {
         for(let i in obj) {
-            if(typeof obj[i] === "object" && !Array.isArray(obj[i])) {
+            if(typeof obj[i] === "object" && !Array.isArray(obj[i]) && !Array.isArray(obj[i].arguments)) {
                 if(!base[i]) base[i] = {};
 
                 addToHandler(obj[i], base[i], [...route, i]);
@@ -129,13 +148,16 @@ function Socket (sock, functions = {}, with_proxy=true) {
                 for(let i in cb) args[i] = (..._args) => call([cb[i]], ..._args);
                 if(typeof fn !== "function") throw 'UNKOWN_METHOD';
                 
-                functions.$before_call && functions.$before_call({ path, iid, args });
+                private_functions.$before_call && private_functions.$before_call({ path, iid, args, src: {
+                    host: sock.request.connection.remoteAddress,
+                    port: sock.request.connection.remotePort
+                }});
 
                 let result = await fn.apply(handler, args);
     
                 sock.emit('res', { iid, res: result });
                 
-                functions.$after_call && functions.$after_call({ path, args, iid, res: result });
+                private_functions.$after_call && private_functions.$after_call({ path, args, iid, res: result });
             } catch (exc) {
                 if(exc instanceof Error) exc = serializeError(exc);
                 if(functions.$error) exc = functions.$error(exc);
@@ -143,7 +165,7 @@ function Socket (sock, functions = {}, with_proxy=true) {
                 console.log(exc)
                 sock.emit('exc', { iid, exc });
 
-                functions.$after_error && functions.$after_error({ path, args, iid, res: result });
+                private_functions.$after_error && private_functions.$after_error({ path, args, iid, error: exc });
             }
         });
 
