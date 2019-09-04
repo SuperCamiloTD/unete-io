@@ -129,8 +129,7 @@ function Socket (sock, functions = {}, with_proxy=true) {
             
             if(typeof x === "object" && !Array.isArray(x)) base[i] = destructureMap(x, [...path, i]);
             else base[i] = {
-                arguments: getParamNames(x),
-                help: functions.$help && functions.$help(path, x)
+                arguments: getParamNames(x)
             }
         }
 
@@ -182,7 +181,8 @@ function Socket (sock, functions = {}, with_proxy=true) {
         });
         
         sock.on('disconnect', () => {
-            for(let i in handlers.failure) handlers.failure[i]('DISCONNECTED');
+            for(let i in handlers.failure)
+                handlers.failure[i]('DISCONNECTED');
         });
     }
 
@@ -190,8 +190,13 @@ function Socket (sock, functions = {}, with_proxy=true) {
         if(sock.id) return success();
 
         sock.once('connect', success);
-        sock.once('connect_error', failure);
-        sock.once('error', (err) => failure(err));
+        sock.once('connect_error', (err) => {
+            if(err === "timeout") Connect(success, failure);
+            else failure(err);
+        });
+        sock.once('error', (err) => {
+            failure(err);
+        });
     });
 
     function initializeHandler () {
@@ -240,6 +245,7 @@ module.exports.NoProxy = (sock, fn) => Socket(sock, fn, false);
 
 var STRIP_COMMENTS = /((\/\/.*$)|(\/\*[\s\S]*?\*\/))/mg;
 var ARGUMENT_NAMES = /([^\s,]+)/g;
+
 function getParamNames(func) {
   var fnStr = func.toString().replace(STRIP_COMMENTS, '');
   var result = fnStr.slice(fnStr.indexOf('(')+1, fnStr.indexOf(')')).match(ARGUMENT_NAMES);
